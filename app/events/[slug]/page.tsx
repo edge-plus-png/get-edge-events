@@ -1,6 +1,4 @@
 // app/events/[slug]/page.tsx
-export const dynamic = "force-dynamic";
-
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import pool from '@/lib/db';
@@ -10,9 +8,9 @@ type EventRow = {
   name: string;
   slug: string;
   description: string | null;
-  date: string;
-  startTime: string;
-  endTime: string;
+  date: string;       // stored as date in Postgres
+  startTime: string;  // time
+  endTime: string;    // time
   venueName: string;
   venueAddress: string;
   paymentMode: string;
@@ -42,7 +40,14 @@ async function getEventBySlug(slug: string): Promise<EventRow | null> {
   return result.rows[0] ?? null;
 }
 
-export default async function EventPage({ params }: { params: { slug: string } }) {
+// 🔑 Make sure this page is resolved at request time, not only at build
+export const dynamic = 'force-dynamic';
+
+export default async function EventPage({
+  params,
+}: {
+  params: { slug: string };
+}) {
   const event = await getEventBySlug(params.slug);
 
   if (!event) {
