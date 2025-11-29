@@ -22,7 +22,7 @@ export default function EventDebugPage({
       </pre>
       <p>
         If you see this, the dynamic route <code>app/events/[slug]/page.tsx</code>{' '}
-        is working and Next is giving you the slug correctly.
+        is working and Next is passing the slug correctly.
       </p>
     </main>
   );
