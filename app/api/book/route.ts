@@ -1,95 +1,65 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'crypto';
+// app/api/book/route.ts
+
+import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const {
-      eventId,
-      name,
-      email,
-      partySize,
-      company,
-      notes,
-      marketingConsent,
-    } = body;
+    const formData = await req.formData();
 
-    if (!eventId || !name || !email || !partySize) {
+    const eventSlug = String(formData.get('eventSlug') || '').trim();
+    const name = String(formData.get('name') || '').trim();
+    const email = String(formData.get('email') || '').trim();
+    const guestsRaw = String(formData.get('guests') || '1').trim();
+    const marketingConsent = formData.get('marketingConsent') === 'on';
+
+    const guests = Number(guestsRaw) || 1;
+
+    if (!eventSlug || !name || !email) {
       return NextResponse.json(
-        { error: 'Missing required fields.' },
-        { status: 400 }
+        { error: 'Missing required fields' },
+        { status: 400 },
       );
     }
 
-    const emailRegex = /\S+@\S+\.\S+/;
-    if (!emailRegex.test(email)) {
+    // Look up the event by slug to get its ID
+    const eventResult = await pool.query<{ id: string }>(
+      `SELECT "id" FROM "Event" WHERE "slug" = $1 LIMIT 1`,
+      [eventSlug],
+    );
+
+    const event = eventResult.rows[0];
+
+    if (!event) {
       return NextResponse.json(
-        { error: 'Please enter a valid email address.' },
-        { status: 400 }
+        { error: 'Event not found for this slug' },
+        { status: 404 },
       );
     }
 
-    const size = Number(partySize);
-    if (Number.isNaN(size) || size < 1 || size > 10) {
-      return NextResponse.json(
-        { error: 'Number of people must be between 1 and 10.' },
-        { status: 400 }
-      );
-    }
-
-    const client = await pool.connect();
-    try {
-      // Check event exists
-      const check = await client.query(
-        `SELECT 1 FROM "Event" WHERE "id" = $1 LIMIT 1`,
-        [eventId],
-      );
-      if (check.rowCount === 0) {
-        return NextResponse.json(
-          { error: 'Event not found.' },
-          { status: 404 }
-        );
-      }
-
-      const id = `booking_${randomUUID()}`;
-
-      await client.query(
-        `INSERT INTO "Booking" (
-          "id",
+    // Insert booking
+    await pool.query(
+      `
+        INSERT INTO "Booking" (
           "eventId",
           "name",
           "email",
-          "partySize",
-          "company",
-          "notes",
-          "marketingConsent",
-          "paymentStatus"
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UNPAID')`,
-        [
-          id,
-          eventId,
-          name.trim(),
-          email.toLowerCase().trim(),
-          size,
-          company || null,
-          notes || null,
-          !!marketingConsent,
-        ]
-      );
+          "guests",
+          "marketingConsent"
+        )
+        VALUES ($1, $2, $3, $4, $5)
+      `,
+      [event.id, name, email, guests, marketingConsent],
+    );
 
-      return NextResponse.json(
-        { success: true, bookingId: id },
-        { status: 201 }
-      );
-    } finally {
-      client.release();
-    }
+    // Redirect to a simple thank-you page
+    const url = new URL('/thanks', req.url);
+    return NextResponse.redirect(url.toString(), { status: 303 });
   } catch (err) {
-    console.error('Error in /api/book', err);
+    console.error('Error handling booking', err);
     return NextResponse.json(
-      { error: 'Something went wrong. Please try again.' },
-      { status: 500 }
+      { error: 'Something went wrong' },
+      { status: 500 },
     );
   }
 }
