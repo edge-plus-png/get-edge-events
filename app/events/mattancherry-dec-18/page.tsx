@@ -24,8 +24,7 @@ export default function MattancherryEventPage() {
       </p>
 
       <p style={{ marginBottom: '1.5rem' }}>
-        Casual networking curry lunch. Pay on exit – order what you like and pay
-        the restaurant directly.
+        Our final Curry Lunch. Choose standard Thali (Chicken, Lamb, Veg, fish and Vegan) or the Special. Pay on exit.
       </p>
 
       <h2 style={{ fontSize: '1.25rem', marginBottom: '0.75rem' }}>

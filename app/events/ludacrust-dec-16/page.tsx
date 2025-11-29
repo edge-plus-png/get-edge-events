@@ -24,8 +24,7 @@ export default function LudacrustEventPage() {
       </p>
 
       <p style={{ marginBottom: '1.5rem' }}>
-        Casual networking pizza lunch. Pay on exit – order what you like and pay
-        the restaurant directly.
+        Pizza lunch at Ludacrust. Pay on exit.
       </p>
 
       <h2 style={{ fontSize: '1.25rem', marginBottom: '0.75rem' }}>
