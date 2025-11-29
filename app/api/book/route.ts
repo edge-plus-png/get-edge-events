@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@vercel/postgres';
 import { randomUUID } from 'crypto';
+import pool from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,48 +38,53 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check event exists
-    const check = await sql`
-      SELECT 1 FROM "Event" WHERE "id" = ${eventId} LIMIT 1;
-    `;
-    if (check.rowCount === 0) {
+    const client = await pool.connect();
+    try {
+      // Check event exists
+      const check = await client.query(
+        `SELECT 1 FROM "Event" WHERE "id" = $1 LIMIT 1`,
+        [eventId],
+      );
+      if (check.rowCount === 0) {
+        return NextResponse.json(
+          { error: 'Event not found.' },
+          { status: 404 }
+        );
+      }
+
+      const id = `booking_${randomUUID()}`;
+
+      await client.query(
+        `INSERT INTO "Booking" (
+          "id",
+          "eventId",
+          "name",
+          "email",
+          "partySize",
+          "company",
+          "notes",
+          "marketingConsent",
+          "paymentStatus"
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'UNPAID')`,
+        [
+          id,
+          eventId,
+          name.trim(),
+          email.toLowerCase().trim(),
+          size,
+          company || null,
+          notes || null,
+          !!marketingConsent,
+        ]
+      );
+
       return NextResponse.json(
-        { error: 'Event not found.' },
-        { status: 404 }
+        { success: true, bookingId: id },
+        { status: 201 }
       );
+    } finally {
+      client.release();
     }
-
-    const id = `booking_${randomUUID()}`;
-
-    await sql`
-      INSERT INTO "Booking" (
-        "id",
-        "eventId",
-        "name",
-        "email",
-        "partySize",
-        "company",
-        "notes",
-        "marketingConsent",
-        "paymentStatus"
-      )
-      VALUES (
-        ${id},
-        ${eventId},
-        ${name.trim()},
-        ${email.toLowerCase().trim()},
-        ${size},
-        ${company || null},
-        ${notes || null},
-        ${!!marketingConsent},
-        'UNPAID'
-      );
-    `;
-
-    return NextResponse.json(
-      { success: true, bookingId: id },
-      { status: 201 }
-    );
   } catch (err) {
     console.error('Error in /api/book', err);
     return NextResponse.json(
