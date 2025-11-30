@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import pool from '@/lib/db';
 
-// Always resolve at request time (not only at build)
 export const dynamic = 'force-dynamic';
 
 type EventRow = {
@@ -11,7 +10,7 @@ type EventRow = {
   name: string;
   slug: string;
   description: string | null;
-  date: string;          // comes back as text from SQL
+  dateStamp: string;      // from your Prisma / DB
   startTime: string;
   endTime: string;
   venueName: string;
@@ -20,44 +19,37 @@ type EventRow = {
 };
 
 async function getEventBySlug(slug: string): Promise<EventRow | null> {
-  try {
-    const result = await pool.query<EventRow>(
-      `
-        SELECT
-          "id",
-          "name",
-          "slug",
-          "description",
-          "date"::text AS "date",
-          "startTime",
-          "endTime",
-          "venueName",
-          "venueAddress",
-          "paymentMode"
-        FROM "Event"
-        WHERE "slug" = $1
-        LIMIT 1;
-      `,
-      [slug],
-    );
+  const result = await pool.query<EventRow>(
+    `
+      SELECT
+        "id",
+        "name",
+        "slug",
+        "description",
+        "dateStamp",
+        "startTime",
+        "endTime",
+        "venueName",
+        "venueAddress",
+        "paymentMode"
+      FROM "Event"
+      WHERE "slug" = $1
+      LIMIT 1;
+    `,
+    [slug],
+  );
 
-    return result.rows[0] ?? null;
-  } catch (err) {
-    console.error('DB error on getEventBySlug', err);
-    return null;
-  }
+  return result.rows[0] ?? null;
 }
 
 export default async function EventPage({ params }: { params: { slug: string } }) {
-  const slug = params.slug;
-  const event = await getEventBySlug(slug);
+  const event = await getEventBySlug(params.slug);
 
   if (!event) {
     notFound();
   }
 
-  // Format date nicely
-  const formattedDate = new Date(event.date).toLocaleDateString('en-GB', {
+  const formattedDate = new Date(event.dateStamp).toLocaleDateString('en-GB', {
     weekday: 'short',
     day: '2-digit',
     month: 'short',
@@ -71,12 +63,9 @@ export default async function EventPage({ params }: { params: { slug: string } }
       </p>
 
       <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>{event.name}</h1>
-
       <p style={{ marginBottom: '0.5rem', color: '#555' }}>
-        {formattedDate} · {event.startTime.slice(0, 5)} –{' '}
-        {event.endTime.slice(0, 5)}
+        {formattedDate} · {event.startTime.slice(0, 5)} – {event.endTime.slice(0, 5)}
       </p>
-
       <p style={{ marginBottom: '1rem', color: '#555' }}>
         {event.venueName}, {event.venueAddress}
       </p>
@@ -91,19 +80,6 @@ export default async function EventPage({ params }: { params: { slug: string } }
           ? 'Pay on exit – order what you like and pay the restaurant directly.'
           : 'Payment details will be confirmed.'}
       </p>
-
-      <Link
-        href={`/events/${event.slug}/book`}
-        style={{
-          display: 'inline-block',
-          padding: '0.75rem 1.5rem',
-          borderRadius: 999,
-          border: '1px solid #000',
-          textDecoration: 'none',
-        }}
-      >
-        Reserve your place
-      </Link>
     </main>
   );
 }
