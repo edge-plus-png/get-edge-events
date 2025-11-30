@@ -2,71 +2,94 @@
 import Link from 'next/link';
 import pool from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 type EventRow = {
   id: string;
   name: string;
   slug: string;
-  date: string; // or dateStamp if that's your column – see note below
-  startTime: string | null;
-  endTime: string | null;
-  venueName: string;
-  venueAddress: string;
+  description?: string | null;
+  date?: string;
+  dateStamp?: string;
+  startTime?: string;
+  endTime?: string;
+  venueName?: string;
+  venueAddress?: string;
+  paymentMode?: string;
 };
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-GB', {
+function formatDate(row: EventRow) {
+  const raw = row.date ?? row.dateStamp ?? null;
+  if (!raw) return 'Date TBC';
+
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return 'Date TBC';
+
+  return d.toLocaleDateString('en-GB', {
     weekday: 'short',
-    day: 'numeric',
+    day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
 }
 
 export default async function HomePage() {
-  // If your column is called "dateStamp" instead of "date",
-  // change "date"::text below to "dateStamp"::text and alias it as "date"
-  const { rows } = await pool.query<EventRow>(`
-    SELECT
-      "id",
-      "name",
-      "slug",
-      "date"::text AS "date",
-      "startTime",
-      "endTime",
-      "venueName",
-      "venueAddress"
-    FROM "Event"
-    ORDER BY "date" ASC;
-  `);
+  let rows: EventRow[] = [];
+
+  try {
+    // Be very loose here: no assumptions about column names except id/name/slug.
+    const result = await pool.query<any>('SELECT * FROM "Event";');
+    rows = result.rows.map((r: any) => ({
+      id: String(r.id),
+      name: r.name,
+      slug: r.slug,
+      description: r.description ?? null,
+      date: r.date ?? undefined,
+      dateStamp: r.dateStamp ?? r['dateStamp'] ?? undefined,
+      startTime: r.startTime ?? r['startTime'] ?? undefined,
+      endTime: r.endTime ?? r['endTime'] ?? undefined,
+      venueName: r.venueName ?? r['venueName'] ?? undefined,
+      venueAddress: r.venueAddress ?? r['venueAddress'] ?? undefined,
+      paymentMode: r.paymentMode ?? r['paymentMode'] ?? undefined,
+    }));
+  } catch (err) {
+    console.error('HomePage DB error:', err);
+  }
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold mb-1">edge lunches & socials</h1>
+       <h1 className="text-2xl font-semibold mb-1">edge lunches & socials v2</h1>
         <p className="text-sm text-gray-600">
           Casual networking events in Taunton. Reserve your place, pay at the venue.
         </p>
       </header>
 
-      {rows.length === 0 && <p>No events available yet.</p>}
+      {rows.length === 0 && (
+        <p>No events available yet, or there was an issue loading events.</p>
+      )}
 
       <div className="space-y-4">
         {rows.map((event) => (
           <div key={event.id} className="border rounded-lg p-4">
             <h2 className="text-lg font-semibold mb-1">{event.name}</h2>
             <p className="text-sm">
-              {formatDate(event.date)} · {event.startTime?.slice(0, 5)}
-              {event.endTime ? ` – ${event.endTime.slice(0, 5)}` : ''}
+              {formatDate(event)}
+              {event.startTime && <> · {event.startTime}</>}
+              {event.endTime && <> – {event.endTime}</>}
             </p>
-            <p className="text-sm">
-              {event.venueName}, {event.venueAddress}
-            </p>
+            {(event.venueName || event.venueAddress) && (
+              <p className="text-sm">
+                {event.venueName}
+                {event.venueName && event.venueAddress ? ', ' : ''}
+                {event.venueAddress}
+              </p>
+            )}
             <p className="mt-2 text-xs text-gray-600">
-              Pay on exit – order what you like and pay the venue directly.
+              Pay on exit – order what you like and pay the restaurant directly.
             </p>
             <Link
-              // ⬇️ KEY CHANGE: use query string, not /events/[slug]
-              href={`/events?slug=${encodeURIComponent(event.slug)}`}
+              href={`/events/${event.slug}`}
               className="inline-flex mt-3 text-sm underline"
             >
               Reserve your place
