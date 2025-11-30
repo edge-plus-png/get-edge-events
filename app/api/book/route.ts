@@ -1,64 +1,93 @@
 // app/api/book/route.ts
-
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
+import { Resend } from 'resend';
+
+// Optional email client
+const resend =
+  process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
+    const body = await req.json();
+    const { eventSlug, name, email, notes } = body;
 
-    const eventSlug = String(formData.get('eventSlug') || '').trim();
-    const name = String(formData.get('name') || '').trim();
-    const email = String(formData.get('email') || '').trim();
-    const guestsRaw = String(formData.get('guests') || '1').trim();
-    const marketingConsent = formData.get('marketingConsent') === 'on';
-
-    const guests = Number(guestsRaw) || 1;
-
+    // Basic validation
     if (!eventSlug || !name || !email) {
       return NextResponse.json(
         { error: 'Missing required fields' },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
-    // Look up the event by slug to get its ID
-    const eventResult = await pool.query<{ id: string }>(
-      `SELECT "id" FROM "Event" WHERE "slug" = $1 LIMIT 1`,
+    // 1) Look up the event by slug
+    const eventResult = await pool.query<{ id: string; name: string }>(
+      `
+        SELECT "id", "name"
+        FROM "Event"
+        WHERE "slug" = $1
+        LIMIT 1
+      `,
       [eventSlug],
     );
 
-    const event = eventResult.rows[0];
-
-    if (!event) {
+    if (eventResult.rowCount === 0) {
       return NextResponse.json(
-        { error: 'Event not found for this slug' },
+        { error: 'Event not found' },
         { status: 404 },
       );
     }
 
-    // Insert booking
-    await pool.query(
+    const event = eventResult.rows[0];
+
+    // 2) Insert booking
+    // IMPORTANT: this assumes Booking has at least:
+    // id (with default), createdAt (default), eventId, name, email, notes (nullable)
+    const insertResult = await pool.query<{ id: string }>(
       `
-        INSERT INTO "Booking" (
-          "eventId",
-          "name",
-          "email",
-          "guests",
-          "marketingConsent"
-        )
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO "Booking" ("eventId", "name", "email", "notes")
+        VALUES ($1, $2, $3, $4)
+        RETURNING "id"
       `,
-      [event.id, name, email, guests, marketingConsent],
+      [event.id, name, email, notes ?? null],
     );
 
-    // Redirect to a simple thank-you page
-    const url = new URL('/thanks', req.url);
-    return NextResponse.redirect(url.toString(), { status: 303 });
-  } catch (err) {
-    console.error('Error handling booking', err);
+    const bookingId = insertResult.rows[0].id;
+
+    // 3) Try to send email (but don't fail the booking if email breaks)
+    if (resend && process.env.MAIL_FROM) {
+      try {
+        await resend.emails.send({
+          from: process.env.MAIL_FROM,
+          to: email,
+          subject: `Your booking for ${event.name}`,
+          text: [
+            `Hi ${name},`,
+            '',
+            `Thanks for reserving a place for: ${event.name}`,
+            '',
+            `We’ve received your booking. If you need to make any changes, just reply to this email.`,
+            '',
+            'edge+ events',
+          ].join('\n'),
+        });
+      } catch (emailErr) {
+        console.error('Email sending failed:', emailErr);
+        // Don’t throw – booking itself already succeeded
+      }
+    }
+
     return NextResponse.json(
-      { error: 'Something went wrong' },
+      { ok: true, bookingId },
+      { status: 200 },
+    );
+  } catch (error) {
+    console.error('Booking error:', error);
+    return NextResponse.json(
+      {
+        error: 'Booking failed',
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 },
     );
   }
