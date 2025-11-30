@@ -9,12 +9,13 @@ type EventRow = {
   name: string;
   slug: string;
   description: string | null;
-  date: string;
-  startTime: string;
-  endTime: string;
-  venueName: string;
-  venueAddress: string;
-  paymentMode: string;
+  dateStamp?: string; // just in case your column is called this
+  date?: string;      // or this
+  startTime?: string;
+  endTime?: string;
+  venueName?: string;
+  venueAddress?: string;
+  paymentMode?: string;
 };
 
 async function getEventBySlug(slug: string): Promise<EventRow | null> {
@@ -26,6 +27,7 @@ async function getEventBySlug(slug: string): Promise<EventRow | null> {
           "name",
           "slug",
           "description",
+          "dateStamp",
           "date",
           "startTime",
           "endTime",
@@ -46,34 +48,76 @@ async function getEventBySlug(slug: string): Promise<EventRow | null> {
   }
 }
 
-export default async function EventPage({ params }: { params: { slug: string } }) {
-  const event = await getEventBySlug(params.slug);
+async function getAllEvents(): Promise<Pick<EventRow, 'id' | 'name' | 'slug'>[]> {
+  try {
+    const result = await pool.query<Pick<EventRow, 'id' | 'name' | 'slug'>>(
+      `SELECT "id", "name", "slug" FROM "Event" ORDER BY "name" ASC`,
+    );
+    return result.rows;
+  } catch (err) {
+    console.error('DB error on getAllEvents', err);
+    return [];
+  }
+}
 
-  // Do NOT call notFound() yet – we want to see debug instead of 404
+export default async function EventPage({ params }: { params: { slug?: string } }) {
+  const debugParams = JSON.stringify(params);
+  const slug = params.slug ?? '';
+
+  const [event, allEvents] = await Promise.all([
+    slug ? getEventBySlug(slug) : Promise.resolve(null),
+    getAllEvents(),
+  ]);
+
   if (!event) {
     return (
       <main style={{ maxWidth: 700, margin: '2rem auto', padding: '0 1rem' }}>
         <p>
           <Link href="/">← Back to events</Link>
         </p>
+
         <h1>Debug: no event found</h1>
+
         <p>
-          Slug from URL: <code>{params.slug}</code>
+          <strong>Slug from URL:</strong>{' '}
+          <code>{slug || '(empty or undefined)'}</code>
         </p>
+
         <p>
-          If you see this, the dynamic route <code>app/events/[slug]/page.tsx</code>{' '}
-          is working, but the database didn&apos;t return a row.
+          <strong>Raw params object:</strong>{' '}
+          <code>{debugParams}</code>
+        </p>
+
+        <h2 style={{ marginTop: '2rem', marginBottom: '0.5rem' }}>Events in DB</h2>
+        {allEvents.length === 0 && <p>No events found in the Event table.</p>}
+        {allEvents.length > 0 && (
+          <ul>
+            {allEvents.map((e) => (
+              <li key={e.id}>
+                <code>{e.slug}</code> – {e.name}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <p style={{ marginTop: '1.5rem', fontSize: '0.9rem', color: '#555' }}>
+          If you see events listed above, use those exact slug values in the URL,
+          e.g. <code>/events/&lt;slug-here&gt;</code>.
         </p>
       </main>
     );
   }
 
-  const formattedDate = new Date(event.date).toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  // If it does find an event, show a simple page:
+  const dateString = event.date ?? event.dateStamp ?? '';
+  const formattedDate = dateString
+    ? new Date(dateString).toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'Date TBC';
 
   return (
     <main style={{ maxWidth: 700, margin: '2rem auto', padding: '0 1rem' }}>
@@ -83,7 +127,7 @@ export default async function EventPage({ params }: { params: { slug: string } }
 
       <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>{event.name}</h1>
       <p style={{ marginBottom: '0.5rem', color: '#555' }}>
-        {formattedDate} · {event.startTime.slice(0, 5)} – {event.endTime.slice(0, 5)}
+        {formattedDate}
       </p>
       <p style={{ marginBottom: '1rem', color: '#555' }}>
         {event.venueName}, {event.venueAddress}
@@ -99,19 +143,6 @@ export default async function EventPage({ params }: { params: { slug: string } }
           ? 'Pay on exit – order what you like and pay the restaurant directly.'
           : 'Payment details will be confirmed.'}
       </p>
-
-      <Link
-        href={`/events/${event.slug}/book`}
-        style={{
-          display: 'inline-block',
-          padding: '0.75rem 1.5rem',
-          borderRadius: 999,
-          border: '1px solid #000',
-          textDecoration: 'none',
-        }}
-      >
-        Reserve your place
-      </Link>
     </main>
   );
 }
